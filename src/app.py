@@ -2,7 +2,7 @@
 //  app.py
 //  
 //
-//  Created by Aafiya Biswas on 02/09/26.
+#   Created by Aafiya Biswas on 02/09/26.
 //
 
 def calculate_total(price, quantity):
