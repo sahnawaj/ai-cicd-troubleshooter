@@ -1,9 +1,4 @@
-
-#  src/app.py
-#
-#
 #   Created by Aafiya Biswas on 02/09/26.
-#
 
 def calculate_total(price, quantity):
     print(f"Calculating total: price={price}, quantity={quantity}")
