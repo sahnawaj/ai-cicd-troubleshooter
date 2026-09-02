@@ -1,7 +1,7 @@
 def calculate_total(price, quantity):
     print(f"Calculating total: price={price}, quantity={quantity}")
 
-    discount = 10
+    discount = 0
     total = (price * quantity) / discount
 
     return total
