@@ -1,9 +1,4 @@
-#
-//  ci.yml
-//  
-//
-//  Created by Aafiya Biswas on 02/09/26.
-//
+
 name: CI Pipeline
 
 on:
