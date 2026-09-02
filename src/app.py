@@ -1,4 +1,3 @@
-
 def calculate_total(price, quantity):
     print(f"Calculating total: price={price}, quantity={quantity}")
 
