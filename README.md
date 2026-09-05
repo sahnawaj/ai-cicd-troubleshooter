@@ -1956,3 +1956,867 @@ That's much stronger evidence for your POC.
 
 
 
+🎉 Excellent! This is a major milestone.
+
+Your AI CI/CD agent has now successfully completed the automated fix application:
+
+GitHub Actions failure
+        ↓
+Agent detects failed job
+        ↓
+Downloads logs
+        ↓
+Extracts failure
+        ↓
+Gemini diagnoses
+        ↓
+Classifies as dependency issue
+        ↓
+Human approves fix
+        ↓
+Creates fix branch
+        ↓
+Modifies CI workflow
+        ↓
+Commits change
+        ↓
+✅ SUCCESS
+
+Your commit is:
+
+f4d099a188b4c0caf71afa851f109b0dd77cf3c0
+
+and branch:
+
+ai-fix/33724849012
+Next step: Create the Pull Request
+
+Now we want the agent to automatically do:
+
+AI Fix Branch
+      ↓
+Create Pull Request
+      ↓
+GitHub Actions runs
+      ↓
+Pipeline passes/fails
+      ↓
+Agent reports result
+
+This is important because we don't want the agent directly merging its own fix. The PR gives you the human-review gate.
+
+Don't change anything yet
+
+Your current implementation has successfully reached the point we wanted.
+
+Next we'll add a small create_pull_request() function to agent.py and call it after apply_fix() succeeds.
+
+That will give your POC a very compelling end-to-end story:
+
+"An AI agent autonomously investigates a failed GitHub Actions pipeline, identifies the root cause, proposes a fix, obtains human approval, creates a fix branch, applies the change, and raises a Pull Request for validation."
+
+That's already a solid AI-powered CI/CD troubleshooting agent POC.
+
+
+Great. We are at the PR stage now. Your current main() already calls apply_fix() and checks its success result.
+
+We will make one small addition: after the fix is successfully committed, create a Pull Request.
+
+Step 1 — Add this function
+
+In agent.py, add this function just before main():
+
+def create_pull_request(repo, branch_name, analysis):
+
+    print("\n")
+    print("=" * 70)
+    print("CREATING PULL REQUEST")
+    print("=" * 70)
+
+    base_branch = repo.default_branch
+
+    title = (
+        f"AI Fix: {analysis['failure_category']}"
+    )
+
+    body = f"""
+## AI-Generated CI/CD Fix
+
+### Failure
+
+**Category:** {analysis['failure_category']}
+
+**Root Cause:**
+{analysis['root_cause']}
+
+**Error:**
+{analysis['error_message']}
+
+### AI Recommended Fix
+
+{analysis['recommended_fix']}
+
+### Proposed Changes
+
+"""
+
+    for change in analysis["proposed_changes"]:
+
+        body += (
+            f"- `{change['file']}`: "
+            f"{change['change']}\n"
+        )
+
+    body += """
+### Validation
+
+This Pull Request was created by the AI CI/CD troubleshooting agent.
+
+The GitHub Actions pipeline should validate the proposed fix.
+"""
+
+    try:
+
+        pr = repo.create_pull(
+            title=title,
+            body=body,
+            head=branch_name,
+            base=base_branch
+        )
+
+        print("\n")
+        print("=" * 70)
+        print("PULL REQUEST CREATED")
+        print("=" * 70)
+
+        print(f"PR Number : #{pr.number}")
+        print(f"Title     : {pr.title}")
+        print(f"URL       : {pr.html_url}")
+
+        return pr
+
+    except Exception as e:
+
+        print("\nFailed to create Pull Request:")
+        print(e)
+
+        return None
+Step 2 — Modify the successful apply_fix() section
+
+You currently have something like:
+
+if success:
+
+    print("\n")
+    print("=" * 70)
+    print("AI FIX APPLIED SUCCESSFULLY")
+    print("=" * 70)
+
+    print(f"Branch: {branch_name}")
+
+This is in the main() flow after apply_fix() succeeds.
+
+Change it to:
+
+if success:
+
+    print("\n")
+    print("=" * 70)
+    print("AI FIX APPLIED SUCCESSFULLY")
+    print("=" * 70)
+
+    print(f"Branch: {branch_name}")
+
+    # --------------------------------------------------
+    # Create Pull Request
+    # --------------------------------------------------
+
+    pr = create_pull_request(
+        repo,
+        branch_name,
+        analysis
+    )
+
+    if pr:
+
+        print("\nPull Request is ready for review.")
+
+    else:
+
+        print("\nPull Request could not be created.")
+
+That's it. Only two changes.
+
+Step 3 — Run the agent
+python agent.py
+
+Because your branch already exists:
+
+Branch already exists: ai-fix/33724849012
+Using the existing branch.
+
+Then approve:
+
+Apply the proposed fix to this branch? (yes/no): yes
+
+You should get:
+
+AI FIX APPLIED SUCCESSFULLY
+
+File   : .github/workflows/ci.yml
+Branch : ai-fix/33724849012
+Commit : f4d099...
+
+Then:
+
+======================================================================
+CREATING PULL REQUEST
+======================================================================
+
+PULL REQUEST CREATED
+======================================================================
+
+PR Number : #1
+Title     : AI Fix: Missing Dependency
+URL       : https://github.com/...
+⚠️ One thing before you run
+
+You already have the branch and commit:
+
+ai-fix/33724849012
+        ↓
+f4d099a188b4c0caf71afa851f109b0dd77cf3c0
+
+So if you run the whole agent again, it may try to apply the same fix again.
+
+That's okay for now, but if GitHub says the branch is already up to date / no changes, send me that output.
+
+Our POC is becoming:
+             GitHub Actions
+                   │
+                   ▼
+             Pipeline fails
+                   │
+                   ▼
+          ┌─────────────────┐
+          │   AI Agent      │
+          │                 │
+          │ Get failure     │
+          │ Get logs        │
+          │ Extract error   │
+          │ Gemini analysis │
+          └────────┬────────┘
+                   │
+                   ▼
+            Human approval
+                   │
+                   ▼
+              Fix branch
+                   │
+                   ▼
+             Apply AI fix
+                   │
+                   ▼
+             Create PR
+                   │
+                   ▼
+          GitHub Actions CI
+                   │
+             ┌─────┴─────┐
+             ▼           ▼
+           PASS         FAIL
+
+Run it and send me the output from CREATING PULL REQUEST onward. Then we'll implement the next important piece: the agent waits for the PR's GitHub Actions result and tells you whether the AI fix actually worked.
+
+####################OUTPUT#################################
+
+Target file  : .github/workflows/ci.yml
+Target branch: ai-fix/33724849012
+
+Current dependency installation:
+----------------------------------------------------------------------
+          python -m pip install --upgrade pip
+          pip install pytest pandas
+
+pandas is already installed.
+
+
+======================================================================
+AI FIX APPLIED SUCCESSFULLY
+======================================================================
+Branch: ai-fix/33724849012
+
+
+======================================================================
+CREATING PULL REQUEST
+======================================================================
+
+
+======================================================================
+PULL REQUEST CREATED
+======================================================================
+PR Number : #1
+Title     : AI Fix: Dependency Failure
+URL       : https://github.com/sahnawaj/ai-cicd-troubleshooter/pull/1
+
+Pull Request is ready for review.
+Fix Type         : dependency
+
+Proposed Changes:
+
+File   : requirements.txt
+Change : pandas
+======================================================================
+###########################################################
+
+🎉 Excellent! Your POC has now successfully reached the Pull Request stage.
+
+You have:
+
+Pipeline failure
+      ↓
+AI analyzes logs
+      ↓
+AI identifies missing pandas
+      ↓
+Human approves
+      ↓
+AI creates branch
+      ↓
+AI applies fix
+      ↓
+AI creates PR #1
+      ↓
+       ⭐ NEXT
+GitHub Actions validates the fix
+
+Your PR is:
+
+#1 — AI Fix: Dependency Failure
+
+Now let's make the agent automatically wait for GitHub Actions and report whether the fix passed or failed.
+
+
+Stage 5C — Monitor the Pull Request
+
+We will add one function.
+
+Step 1 — Add this function to agent.py
+
+Put it just before main(), underneath create_pull_request():
+
+def monitor_pull_request(repo, pr, timeout=300):
+
+    print("\n")
+    print("=" * 70)
+    print("MONITORING PULL REQUEST")
+    print("=" * 70)
+
+    print(f"PR Number : #{pr.number}")
+    print(f"URL       : {pr.html_url}")
+
+    start_time = time.time()
+
+    while True:
+
+        # Refresh PR information
+        pr.update()
+
+        head_sha = pr.head.sha
+
+        print(f"\nCommit: {head_sha}")
+
+        try:
+
+            commit = repo.get_commit(head_sha)
+
+            check_runs = list(
+                commit.get_check_runs()
+            )
+
+        except Exception as e:
+
+            print(f"Unable to get CI status: {e}")
+
+            return False
+
+        if not check_runs:
+
+            print("GitHub Actions has not started yet.")
+
+        else:
+
+            all_completed = True
+
+            for check in check_runs:
+
+                print(
+                    f"Check: {check.name} | "
+                    f"Status: {check.status} | "
+                    f"Conclusion: {check.conclusion}"
+                )
+
+                if check.status != "completed":
+
+                    all_completed = False
+
+            # --------------------------------------------------
+            # Wait until all checks finish
+            # --------------------------------------------------
+
+            if all_completed:
+
+                failed = False
+
+                for check in check_runs:
+
+                    if check.conclusion not in [
+                        "success",
+                        "skipped",
+                        "neutral"
+                    ]:
+
+                        failed = True
+
+                print("\n")
+                print("=" * 70)
+
+                if failed:
+
+                    print("AI FIX VALIDATION FAILED")
+                    print("=" * 70)
+
+                    print(
+                        "\nThe Pull Request CI checks failed."
+                    )
+
+                    print(
+                        "The AI-generated fix needs further investigation."
+                    )
+
+                    return False
+
+                else:
+
+                    print("AI FIX VALIDATED SUCCESSFULLY")
+                    print("=" * 70)
+
+                    print(
+                        "\nAll GitHub Actions checks passed."
+                    )
+
+                    print(
+                        "The proposed AI fix appears to be working."
+                    )
+
+                    return True
+
+        # --------------------------------------------------
+        # Timeout
+        # --------------------------------------------------
+
+        if time.time() - start_time > timeout:
+
+            print("\n")
+            print("=" * 70)
+            print("CI MONITORING TIMEOUT")
+            print("=" * 70)
+
+            print(
+                "\nGitHub Actions did not finish within "
+                f"{timeout} seconds."
+            )
+
+            return False
+
+        print("\nWaiting 10 seconds for CI...")
+
+        time.sleep(10)
+Step 2 — Call it after PR creation
+
+You currently have:
+
+if pr:
+
+    print("\nPull Request is ready for review.")
+
+else:
+
+    print("\nPull Request could not be created.")
+
+Change it to:
+
+if pr:
+
+    print("\nPull Request is ready for review.")
+
+    # --------------------------------------------------
+    # Monitor GitHub Actions
+    # --------------------------------------------------
+
+    ci_success = monitor_pull_request(
+        repo,
+        pr
+    )
+
+    if ci_success:
+
+        print("\n")
+        print("=" * 70)
+        print("END-TO-END AI FIX SUCCESS")
+        print("=" * 70)
+
+    else:
+
+        print("\n")
+        print("=" * 70)
+        print("AI FIX REQUIRES FURTHER INVESTIGATION")
+        print("=" * 70)
+
+else:
+
+    print("\nPull Request could not be created.")
+Step 3 — Run the agent
+
+Now:
+
+python agent.py
+One thing to expect
+
+Because your existing branch already contains:
+
+pip install pytest pandas
+
+the agent may say:
+
+pandas is already installed.
+
+That's okay.
+
+It will then create/use the PR and reach:
+
+MONITORING PULL REQUEST
+
+You should see something like:
+
+======================================================================
+MONITORING PULL REQUEST
+======================================================================
+
+PR Number : #1
+URL       : https://github.com/.../pull/1
+
+Commit: f4d099a...
+
+Check: CI Pipeline | Status: queued | Conclusion: None
+
+Waiting 10 seconds for CI...
+
+Then:
+
+Check: CI Pipeline | Status: in_progress | Conclusion: None
+
+Waiting 10 seconds for CI...
+
+Finally:
+
+Check: CI Pipeline | Status: completed | Conclusion: success
+
+and:
+
+======================================================================
+AI FIX VALIDATED SUCCESSFULLY
+======================================================================
+
+All GitHub Actions checks passed.
+The proposed AI fix appears to be working.
+🎯 This is now a real agentic workflow
+
+After this step, your demo becomes quite strong:
+
+             GitHub
+                │
+                ▼
+        Pipeline fails ❌
+                │
+                ▼
+       ┌─────────────────┐
+       │   AI Agent      │
+       │                 │
+       │ Fetch logs      │
+       │ Extract error   │
+       │ Diagnose        │
+       │ Classify        │
+       │ Propose fix     │
+       └────────┬────────┘
+                │
+                ▼
+        Human Approval
+                │
+                ▼
+          Create Branch
+                │
+                ▼
+           Apply Fix
+                │
+                ▼
+         Create Pull Request
+                │
+                ▼
+       GitHub Actions runs
+                │
+          ┌─────┴─────┐
+          ▼           ▼
+        PASS         FAIL
+          │           │
+          ▼           ▼
+       SUCCESS     Investigate
+
+And importantly, the agent doesn't merge the code itself. The human still controls the final merge.
+
+After this works
+
+The next improvement I'd recommend is not more code yet. We should make the agent handle the interesting case:
+
+What happens when the AI's first fix fails?
+
+Then we can implement:
+
+PR CI fails
+   ↓
+Agent gets NEW failure logs
+   ↓
+Gemini analyzes new failure
+   ↓
+Proposes Fix #2
+   ↓
+Human approval
+   ↓
+Update same PR
+   ↓
+CI runs again
+
+That is where this starts becoming a genuinely agentic CI/CD troubleshooting system, rather than just a log analyzer.
+
+####################OUTPUT#############################
+CREATING PULL REQUEST
+======================================================================
+
+Pull Request already exists.
+PR Number : #1
+URL       : https://github.com/sahnawaj/ai-cicd-troubleshooter/pull/1
+
+Pull Request is ready for review.
+
+
+======================================================================
+MONITORING PULL REQUEST
+======================================================================
+PR Number : #1
+URL       : https://github.com/sahnawaj/ai-cicd-troubleshooter/pull/1
+
+Commit: f4d099a188b4c0caf71afa851f109b0dd77cf3c0
+Check: build-and-test | Status: completed | Conclusion: success
+
+
+======================================================================
+AI FIX VALIDATED SUCCESSFULLY
+======================================================================
+
+All GitHub Actions checks passed.
+The proposed AI fix appears to be working.
+
+
+======================================================================
+END-TO-END AI FIX SUCCESS
+======================================================================
+Fix Type         : dependency
+
+Proposed Changes:
+
+File   : requirements.txt
+Change : Add pandas to requirements.txt
+======================================================================
+############################################################
+🎉 This is exactly what we wanted. Your end-to-end POC is working.
+
+You now have a complete autonomous troubleshooting loop:
+
+GitHub Actions Pipeline
+        │
+        ▼
+    ❌ Failure
+        │
+        ▼
+   AI CI/CD Agent
+        │
+        ├── Find failed workflow
+        ├── Find failed job
+        ├── Download logs
+        ├── Extract relevant error
+        ├── Send to Gemini
+        └── Diagnose failure
+        │
+        ▼
+   AI Proposed Fix
+        │
+        ▼
+  👤 Human Approval
+        │
+        ▼
+  Create Fix Branch
+        │
+        ▼
+   Apply AI Fix
+        │
+        ▼
+ Create / Reuse Pull Request
+        │
+        ▼
+ GitHub Actions runs
+        │
+        ▼
+    ✅ SUCCESS
+
+Your actual run proves it:
+
+PR #1
+    ↓
+build-and-test
+    ↓
+completed / success
+    ↓
+AI FIX VALIDATED SUCCESSFULLY
+What I recommend as the next stage
+
+Don't add more complexity immediately. We should now make the POC more impressive by adding the missing failure → retry → second fix capability.
+
+For example:
+
+Pipeline fails
+     ↓
+Gemini: "pandas missing"
+     ↓
+AI fixes pandas
+     ↓
+PR created
+     ↓
+CI fails again
+     ↓
+Agent detects NEW failure
+     ↓
+Gemini analyzes NEW logs
+     ↓
+AI proposes Fix #2
+     ↓
+Human approval
+     ↓
+Apply Fix #2
+     ↓
+CI passes
+
+That demonstrates genuine agentic behavior, rather than simply:
+
+"Send logs to an LLM and get an answer."
+
+Your current POC capabilities
+Capability    Status
+GitHub authentication    ✅
+Detect failed workflow    ✅
+Detect failed job    ✅
+Download job logs    ✅
+Extract relevant failure    ✅
+Gemini analysis    ✅
+Failure categorization    ✅
+Root-cause identification    ✅
+Proposed code/config fix    ✅
+Human approval    ✅
+Create fix branch    ✅
+Apply fix    ✅
+Create/reuse PR    ✅
+Monitor PR CI    ✅
+Validate fix automatically    ✅
+Retry with a second fix    ⏭️ Next
+Auto-merge    ❌ Intentionally not doing this
+
+I would keep auto-merge disabled for this POC. Human approval + automated validation is a much better enterprise story.
+
+One thing I'd also fix
+
+Your final report still says:
+
+File : requirements.txt
+Change : Add pandas
+
+while the actual change was:
+
+.github/workflows/ci.yml
+pip install pytest pandas
+
+That's a reporting inconsistency we should fix before presenting this POC. The agent should report the actual file and actual change committed, not merely Gemini's original proposal.
+
+So I suggest our next two steps:
+
+1. Fix the reporting accuracy
+2. Add automatic second-attempt troubleshooting when PR CI fails
+
+That will make this considerably stronger for your AI-Powered CI/CD project/demo.
+
+#####################OUTPUT######################
+======================================================================
+MONITORING PULL REQUEST
+======================================================================
+PR Number : #1
+URL       : https://github.com/sahnawaj/ai-cicd-troubleshooter/pull/1
+
+Commit: f4d099a188b4c0caf71afa851f109b0dd77cf3c0
+Check: build-and-test | Status: completed | Conclusion: success
+
+
+======================================================================
+AI FIX VALIDATED SUCCESSFULLY
+======================================================================
+
+All GitHub Actions checks passed.
+The proposed AI fix appears to be working.
+
+
+======================================================================
+END-TO-END AI FIX SUCCESS
+======================================================================
+
+
+======================================================================
+FINAL AI FIX REPORT
+======================================================================
+Fix Type : dependency
+
+ACTUAL CHANGE APPLIED:
+File   : .github/workflows/ci.yml
+Change : pandas already installed
+======================================================================
+
+#################################################
+
+
+Great. We'll do Step 2 only: add the retry/feedback loop.
+
+The goal is:
+
+PR CI fails
+   ↓
+Agent gets the new failure
+   ↓
+Gemini analyzes it
+   ↓
+Proposes Fix #2
+   ↓
+Human approves
+   ↓
+Agent applies Fix #2
+   ↓
+CI runs again
+
+Before changing the code, I want to use your current agent_fixed.py as the starting point so we don't accidentally overwrite the working parts.
+
+Next, upload your current agent.py (the version you're running successfully now). Then I'll modify that exact file and give you a ready-to-run replacement, rather than asking you to manually merge a large block.
