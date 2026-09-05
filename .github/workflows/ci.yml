@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest
+          pip install pytest pandas
 
       - name: Run application
         run: |
@@ -33,3 +33,4 @@ jobs:
       - name: Run tests
         run: |
           python -m pytest tests/
+          exit 1
