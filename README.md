@@ -1954,5 +1954,1041 @@ No change to the AI prompt or troubleshooting logic.
 
 That's much stronger evidence for your POC.
 
+After that, we'll do something even better
+
+Once you've demonstrated those two failures, we'll move toward the real agentic behavior:
+
+             GitHub Actions
+                    │
+                    ▼
+                 FAILED
+                    │
+                    ▼
+              AI Agent
+                    │
+             Analyze failure
+                    │
+                    ▼
+              Root Cause
+                    │
+                    ▼
+             Generate Fix
+                    │
+                    ▼
+          ┌─────────────────┐
+          │ Human Approval? │
+          └────────┬────────┘
+                   │
+                   ▼
+             Create Branch
+                   │
+                   ▼
+             Modify Code
+                   │
+                   ▼
+             Create PR
+                   │
+                   ▼
+             GitHub Actions
+                   │
+             ┌─────┴─────┐
+             ▼           ▼
+           PASS         FAIL
+             │           │
+             ▼           ▼
+          Done      Analyze Again
+
+That final loop is what will make your AI-powered CI/CD troubleshooting POC genuinely interesting.
+
+For now, make the pandas change, let GitHub Actions fail, then run python agent.py. Send me the resulting report and we'll continue.
+
+###################OUTPUT###########################
+======================================================================
+
+Sending log to Gemini AI...
+Direct use of automatic function calling (AFC) in Models.generate_content is not recommended. Instead, we recommend to use AFC in Chat.send_message. Similarly, direct use of AFC in Models.generate_content_stream is not recommended. Instead, we recommend to use AFC in Chat.send_message_stream.
 
 
+======================================================================
+AI TROUBLESHOOTING REPORT
+======================================================================
+Failure Category : Missing Dependency
+Root Cause       : The Python module 'pandas' is not installed in the CI environment.
+Failed File      : src/app.py
+Failed Line      : 22
+Error Message    : ModuleNotFoundError: No module named 'pandas'
+Explanation      : Execution of src/app.py failed at line 22 because it attempted to import 'pandas', which was not installed in the Python environment.
+Recommended Fix  : Add 'pandas' to your requirements file or install it via 'pip install pandas' prior to executing the Python script in your CI workflow.
+Confidence       : 100%
+======================================================================
+######################################################################
+
+Excellent. 🎉 Your agent has now demonstrated that it can generalize across different failure types.
+
+You tested:
+
+Scenario    AI diagnosis    Result
+ZeroDivisionError    Runtime/Application error    ✅
+ModuleNotFoundError    Missing dependency    ✅
+
+And importantly, you didn't change the troubleshooting logic between the two tests.
+
+That gives you a solid Stage 4 POC.
+
+Next: Stage 5 — Make it actually agentic
+
+Right now your workflow is:
+
+GitHub
+   ↓
+Failed Pipeline
+   ↓
+Python Agent
+   ↓
+Extract Log
+   ↓
+Gemini
+   ↓
+Diagnosis
+
+The next step is to have the AI propose a concrete code/configuration change, rather than just telling you what is wrong.
+
+I'd suggest we do this safely in two stages:
+
+Stage 5A
+AI analyzes failure
+       ↓
+AI generates proposed fix
+       ↓
+Show proposed fix to user
+       ↓
+User approves
+
+Then:
+
+Stage 5B
+Approved
+   ↓
+Create Git branch
+   ↓
+Apply fix
+   ↓
+Commit
+   ↓
+Create Pull Request
+   ↓
+GitHub Actions runs
+
+And eventually:
+
+              ┌──────────────┐
+              │ GitHub CI    │
+              └──────┬───────┘
+                     │
+                  FAILURE
+                     ↓
+             ┌──────────────┐
+             │ AI Agent     │
+             └──────┬───────┘
+                    ↓
+               Analyze
+                    ↓
+             Generate Fix
+                    ↓
+              Create PR
+                    ↓
+              CI runs again
+                 /     \
+              PASS      FAIL
+               ↓         ↓
+             Done    Analyze Again
+             
+
+Let's start with Stage 5A
+
+We'll not allow the agent to modify your GitHub repository yet.
+
+Instead, Gemini will return:
+
+{
+  "failure_category": "Missing Dependency",
+  "root_cause": "pandas is not installed",
+  "recommended_fix": "Add pandas to dependencies",
+  "fix_type": "workflow",
+  "proposed_changes": [
+    {
+      "file": ".github/workflows/ci.yml",
+      "change": "Add pandas to pip install"
+    }
+  ]
+}
+
+Then your agent can display:
+
+🤖 PROPOSED FIX
+
+Problem:
+pandas is missing from CI environment.
+
+File:
+.github/workflows/ci.yml
+
+Change:
+pip install pytest pandas
+
+Confidence:
+100%
+
+⚠️ No changes have been made.
+
+This human-in-the-loop approach is much safer and is also a better architecture to demonstrate in a POC.
+
+One thing before we continue
+
+Your current code has the Gemini model name:
+
+model="gemini-3.7-flash"
+
+Since you're successfully getting responses, leave it as-is for now.
+
+Next we'll modify the JSON schema/prompt so Gemini produces both diagnosis + proposed remediation.
+
+###
+Great. Let's implement Stage 5A — AI-generated remediation, but keep it human-approved. We won't let the agent change GitHub yet.
+
+Step 5A.1 — Update the Gemini prompt
+
+In agent.py, find your current prompt and replace it with this:
+
+prompt = f"""
+You are an expert CI/CD troubleshooting engineer.
+
+Analyze the following GitHub Actions failure log.
+
+Return ONLY valid JSON.
+
+Use exactly this structure:
+
+{{
+    "failure_category": "",
+    "root_cause": "",
+    "failed_file": "",
+    "failed_line": null,
+    "error_message": "",
+    "explanation": "",
+    "recommended_fix": "",
+    "confidence": 0,
+    "fix_type": "",
+    "proposed_changes": [
+        {{
+            "file": "",
+            "change": ""
+        }}
+    ]
+}}
+
+Rules:
+
+- failure_category: type of CI/CD failure.
+- root_cause: actual technical cause.
+- failed_file: repository-relative path if available.
+- failed_line: line number if available, otherwise null.
+- error_message: primary error.
+- explanation: brief explanation of why it failed.
+- recommended_fix: practical remediation.
+- confidence: number from 0 to 100.
+- fix_type: one of:
+    - code
+    - dependency
+    - configuration
+    - workflow
+    - environment
+    - unknown
+
+- proposed_changes: list of concrete changes that could fix the failure.
+- Each proposed change must contain:
+    - file: repository-relative file path
+    - change: specific modification to make
+
+Important:
+
+- Do NOT make any changes yourself.
+- Do NOT assume files that are not supported by the log.
+- Ignore unrelated warnings unless they caused the failure.
+- Only use evidence from the supplied log.
+- Return JSON only.
+- Do not use Markdown.
+- Do not include ```json.
+
+GitHub Actions failure log:
+
+---------------- LOG START ----------------
+
+{relevant_log}
+
+---------------- LOG END ----------------
+"""
+Step 5A.2 — Run the agent
+
+Run:
+
+python agent.py
+
+Because your current GitHub failure is the missing pandas dependency, Gemini should produce something similar to:
+
+======================================================================
+AI TROUBLESHOOTING REPORT
+======================================================================
+
+Failure Category : Missing Dependency
+
+Root Cause       : pandas is not installed in the CI environment.
+
+Failed File      : src/app.py
+
+Failed Line      : 1
+
+Error Message    : ModuleNotFoundError: No module named 'pandas'
+
+Explanation      : The application imports pandas but the CI workflow
+                   does not install the package.
+
+Recommended Fix : Add pandas to the CI dependencies.
+
+Confidence       : 100%
+
+Fix Type         : dependency
+
+Proposed Changes:
+
+File:
+.github/workflows/ci.yml
+
+Change:
+Add pandas to the pip install command.
+
+======================================================================
+Step 5A.3 — Make Python display the proposed changes
+
+Your current output code probably looks like this:
+
+print(f"Failure Category : {analysis['failure_category']}")
+print(f"Root Cause       : {analysis['root_cause']}")
+print(f"Failed File      : {analysis['failed_file']}")
+print(f"Failed Line      : {analysis['failed_line']}")
+print(f"Error Message    : {analysis['error_message']}")
+print(f"Explanation      : {analysis['explanation']}")
+print(f"Recommended Fix  : {analysis['recommended_fix']}")
+print(f"Confidence       : {analysis['confidence']}%")
+
+Replace it with:
+
+print(f"Failure Category : {analysis['failure_category']}")
+print(f"Root Cause       : {analysis['root_cause']}")
+print(f"Failed File      : {analysis['failed_file']}")
+print(f"Failed Line      : {analysis['failed_line']}")
+print(f"Error Message    : {analysis['error_message']}")
+print(f"Explanation      : {analysis['explanation']}")
+print(f"Recommended Fix  : {analysis['recommended_fix']}")
+print(f"Confidence       : {analysis['confidence']}%")
+print(f"Fix Type         : {analysis['fix_type']}")
+
+print("\nProposed Changes:")
+
+for change in analysis["proposed_changes"]:
+
+    print(f"\nFile   : {change['file']}")
+    print(f"Change : {change['change']}")
+Step 5A.4 — Test it
+
+Run:
+
+python agent.py
+
+Your output should now contain:
+
+AI TROUBLESHOOTING REPORT
+
+Failure Category : Missing Dependency
+
+Root Cause       : The Python module 'pandas' is not installed.
+
+...
+
+Fix Type         : dependency
+
+Proposed Changes:
+
+File   : .github/workflows/ci.yml
+
+Change : Add pandas to the pip install command.
+🎯 What's different now?
+
+Previously:
+
+AI
+ ↓
+"What went wrong?"
+ ↓
+Answer
+
+Now:
+
+AI
+ ↓
+"What went wrong?"
+ ↓
+"How can it be fixed?"
+ ↓
+"Which file needs changing?"
+ ↓
+"What change should be made?"
+
+But the agent still doesn't touch your repository.
+
+That's intentional.
+
+The next major step
+
+Once this works, we'll move to Stage 5B:
+
+              Pipeline FAILED
+                     ↓
+                Analyze Log
+                     ↓
+                Root Cause
+                     ↓
+               Generate Fix
+                     ↓
+             ┌───────────────┐
+             │ HUMAN APPROVAL│
+             └───────┬───────┘
+                     ↓
+              Create Git Branch
+                     ↓
+              Modify Repository
+                     ↓
+                  Commit
+                     ↓
+               Create PR
+                     ↓
+                Run CI
+
+And we'll start with the pandas failure, because it's relatively safe: the agent can modify the workflow to install pandas.
+
+Run python agent.py with the new prompt and send me the output. Then we'll build the GitHub branch/PR part.
+
+##################OUTPUT######################
+======================================================================
+
+Sending log to Gemini AI...
+Gemini attempt 1/3...
+Direct use of automatic function calling (AFC) in Models.generate_content is not recommended. Instead, we recommend to use AFC in Chat.send_message. Similarly, direct use of AFC in Models.generate_content_stream is not recommended. Instead, we recommend to use AFC in Chat.send_message_stream.
+
+
+======================================================================
+AI TROUBLESHOOTING REPORT
+======================================================================
+Failure Category : Missing Dependency
+Root Cause       : The Python environment does not have the 'pandas' package installed when executing src/app.py.
+Failed File      : src/app.py
+Failed Line      : 22
+Error Message    : ModuleNotFoundError: No module named 'pandas'
+Explanation      : Execution of src/app.py failed at line 22 during 'import pandas' because the 'pandas' dependency has not been installed in the workflow's Python environment.
+Recommended Fix  : Install 'pandas' prior to running the script (e.g., via 'pip install pandas' or by installing dependencies from requirements.txt).
+Confidence       : 100%
+Fix Type         : dependency
+
+Proposed Changes:
+
+File   : src/app.py
+Change : Ensure pandas is installed in the CI environment or remove the import if unused.
+======================================================================
+
+############################################################################
+
+Perfect. ✅ Stage 5A is working.
+
+Your agent is now producing both:
+
+Diagnosis
+Fix type
+Proposed change
+
+For example:
+
+Failure: Missing Dependency
+Root Cause: pandas is not installed
+Fix Type: dependency
+
+Proposed Change:
+src/app.py
+→ Ensure pandas is installed
+One thing I would improve before Stage 5B
+
+Gemini proposed:
+
+src/app.py — Ensure pandas is installed in the CI environment or remove the import if unused.
+
+That's slightly ambiguous. The agent should ideally identify the actual file that needs changing. In this case, the correct remediation is probably the CI dependency configuration, not src/app.py.
+
+So let's make the AI more precise.
+
+Change this rule in your prompt:
+
+- Each proposed change must contain:
+    - file: repository-relative file path
+    - change: specific modification to make
+
+to:
+
+- Each proposed change must contain:
+    - file: repository-relative file path
+    - change: exact change required
+
+- Prefer modifying the file that caused the configuration,
+  dependency, or workflow problem rather than the application
+  source file.
+
+- For missing Python dependencies, prefer requirements.txt
+  or the CI workflow configuration if those files are present.
+
+- Do not suggest removing an import merely to make CI pass
+  unless the log clearly indicates the import is unused.
+
+This should produce something more like:
+
+Fix Type: dependency
+
+Proposed Changes:
+
+File: requirements.txt
+
+Change: Add pandas to the dependency list.
+
+or:
+
+File: .github/workflows/ci.yml
+
+Change: Change pip install pytest to pip install pytest pandas.
+
+#########################OUTPUT################################
+======================================================================
+
+Sending log to Gemini AI...
+Gemini attempt 1/3...
+Direct use of automatic function calling (AFC) in Models.generate_content is not recommended. Instead, we recommend to use AFC in Chat.send_message. Similarly, direct use of AFC in Models.generate_content_stream is not recommended. Instead, we recommend to use AFC in Chat.send_message_stream.
+
+
+======================================================================
+AI TROUBLESHOOTING REPORT
+======================================================================
+Failure Category : Dependency Failure
+Root Cause       : The required Python dependency 'pandas' is not installed in the CI environment.
+Failed File      : src/app.py
+Failed Line      : 22
+Error Message    : ModuleNotFoundError: No module named 'pandas'
+Explanation      : Execution of src/app.py failed at line 22 because the Python module 'pandas' is not installed in the CI runner environment.
+Recommended Fix  : Add 'pandas' to requirements.txt or install it in the CI workflow before running the application.
+Confidence       : 100%
+Fix Type         : dependency
+
+Proposed Changes:
+
+File   : requirements.txt
+Change : Add 'pandas' to requirements.txt
+======================================================================
+
+###########################################################
+
+Stage 5B — Human-approved GitHub fix
+
+Now we're ready for the exciting part.
+
+We'll have your agent create a fix branch and Pull Request, but only after you explicitly approve the proposed fix.
+
+The flow will become:
+
+                 GitHub Actions
+                       ↓
+                    FAILURE
+                       ↓
+                  AI Agent
+                       ↓
+                 Analyze Log
+                       ↓
+                Generate Fix
+                       ↓
+              ┌────────────────┐
+              │ Proposed Fix   │
+              └───────┬────────┘
+                      ↓
+                USER APPROVAL
+                      ↓
+              ┌───────┴────────┐
+              │                │
+             YES               NO
+              ↓                ↓
+        Create branch         Stop
+              ↓
+        Apply modification
+              ↓
+            Commit
+              ↓
+          Create PR
+              ↓
+        GitHub Actions
+
+This is a much better POC than allowing the AI to directly modify main.
+
+We'll start very safely
+
+For the first implementation, the agent will NOT automatically merge anything.
+
+It will only:
+
+Create a branch
+Make the proposed change
+Commit it
+Create a Pull Request
+
+You review the PR and GitHub Actions tests it.
+
+If the pipeline passes → great.
+
+If it fails → that's actually even more interesting, because we can make the agent analyze the new failure and iterate.
+
+That's the beginning of the true agentic loop.
+
+Your current Stage 5A is complete. The next code we add will be the GitHub branch/commit/PR capability.
+
+
+
+Great. Let's move to Stage 5B — create a GitHub branch + Pull Request, but we'll keep it safe: no automatic merge.
+
+Before we write the code, I want to make one small architectural change: the agent should first show the proposed fix and ask for approval. Once approved, it can create the branch/PR.
+
+We'll implement that in the next step.
+
+
+Perfect. Let's build Stage 5B.1 — human approval + GitHub branch creation.
+
+We will not modify any files yet. First we'll prove that the agent can safely create a branch.
+
+1. Add this function to agent.py
+
+Put it above main():
+
+def create_fix_branch(repo, failed_run_id):
+
+    branch_name = f"ai-fix/{failed_run_id}"
+
+    print("\n")
+    print("=" * 70)
+    print("PROPOSED FIX BRANCH")
+    print("=" * 70)
+
+    print(f"Branch: {branch_name}")
+
+    approval = input("\nCreate this branch? (yes/no): ").strip().lower()
+
+    if approval != "yes":
+        print("Operation cancelled.")
+        return None
+
+    # Get current default branch
+    default_branch = repo.default_branch
+
+    print(f"Base branch: {default_branch}")
+
+    # Get latest commit on default branch
+    base_branch = repo.get_branch(default_branch)
+    base_sha = base_branch.commit.sha
+
+    # Create branch reference
+    repo.create_git_ref(
+        ref=f"refs/heads/{branch_name}",
+        sha=base_sha
+    )
+
+    print(f"\nBranch created successfully: {branch_name}")
+
+    return branch_name
+2. Call the function after the AI report
+
+Find this part near the end:
+
+print(f"Confidence       : {analysis['confidence']}%")
+
+After the proposed changes loop, add:
+
+# --------------------------------------------------
+# Human approval
+# --------------------------------------------------
+
+print("\n")
+print("=" * 70)
+print("HUMAN APPROVAL REQUIRED")
+print("=" * 70)
+
+print("The agent has NOT modified your repository.")
+
+branch_name = create_fix_branch(
+    repo,
+    failed_run.id
+)
+
+if branch_name:
+    print("\nReady for the next step:")
+    print("Apply the AI-generated fix to this branch.")
+3. Run it
+python agent.py
+
+You should now get:
+
+AI TROUBLESHOOTING REPORT
+======================================================================
+
+Failure Category : Missing Dependency
+Root Cause       : pandas is not installed
+...
+
+Proposed Changes:
+
+File   : requirements.txt
+Change : Add pandas to the dependency list.
+
+======================================================================
+HUMAN APPROVAL REQUIRED
+======================================================================
+
+The agent has NOT modified your repository.
+
+======================================================================
+PROPOSED FIX BRANCH
+======================================================================
+
+Branch: ai-fix/33642078288
+
+Create this branch? (yes/no):
+
+Type:
+
+yes
+
+You should then see:
+
+Base branch: main
+
+Branch created successfully: ai-fix/33642078288
+4. Verify on GitHub
+
+Open your repository's Branches page and you should see:
+
+main
+ai-fix/33642078288
+
+At this point our agent has successfully done:
+
+GitHub failure
+      ↓
+AI diagnosis
+      ↓
+AI proposed fix
+      ↓
+👤 Human approval
+      ↓
+Create isolated branch
+
+It has still made zero changes to main. 👍
+
+Next step
+
+Once you confirm the branch appears on GitHub, we'll implement:
+
+Stage 5B.2 — AI-generated code change → commit to the new branch
+
+For your current pandas failure, the agent will be able to make a change such as:
+
+requirements.txt
+
++ pandas
+
+and commit it to:
+
+ai-fix/33642078288
+
+Then we'll add the final piece:
+
+Branch
+  ↓
+Commit
+  ↓
+Pull Request
+  ↓
+GitHub Actions
+  ↓
+PASS / FAIL
+
+Run it and tell me whether ai-fix/33642078288 appears in GitHub.
+
+#######################OUTPUT#####################
+======================================================================
+HUMAN APPROVAL REQUIRED
+======================================================================
+The agent has NOT modified your repository.
+
+
+======================================================================
+PROPOSED FIX BRANCH
+======================================================================
+Branch: ai-fix/33724849012
+
+Create this branch? (yes/no): yes
+Base branch: main
+
+Branch created successfully: ai-fix/33724849012
+
+Ready for the next step:
+Apply the AI-generated fix to this branch.
+Fix Type         : dependency
+
+Proposed Changes:
+
+File   : requirements.txt
+Change : Add 'pandas' to requirements.txt
+======================================================================
+###################################################################
+
+Excellent. ✅ Stage 5B.1 is complete.
+
+Your agent successfully:
+
+Failed Pipeline
+      ↓
+Gemini Diagnosis
+      ↓
+Proposed Fix
+      ↓
+Human Approval: YES
+      ↓
+Created Branch
+ai-fix/33724849012
+
+And importantly, main is untouched.
+
+Stage 5B.2 — Apply the AI-generated fix
+
+Now we'll make the agent actually modify the new branch.
+
+For this test, the fix is simple:
+
+requirements.txt
++ pandas
+1. Add this function to agent.py
+
+Put it above main():
+
+def apply_fix(repo, branch_name, analysis):
+
+    print("\n")
+    print("=" * 70)
+    print("APPLYING AI-GENERATED FIX")
+    print("=" * 70)
+
+    changes = analysis.get("proposed_changes", [])
+
+    if not changes:
+        print("No proposed changes found.")
+        return False
+
+    for change in changes:
+
+        file_path = change["file"]
+        description = change["change"]
+
+        print(f"\nFile: {file_path}")
+        print(f"Change: {description}")
+
+        # --------------------------------------------------
+        # Special handling for requirements.txt
+        # --------------------------------------------------
+
+        if file_path == "requirements.txt":
+
+            try:
+                file = repo.get_contents(
+                    file_path,
+                    ref=branch_name
+                )
+
+                current_content = file.decoded_content.decode("utf-8")
+
+                if "pandas" in current_content.lower():
+
+                    print("pandas is already present.")
+                    continue
+
+                new_content = current_content.rstrip() + "\npandas\n"
+
+                repo.update_file(
+                    path=file_path,
+                    message="AI fix: add missing pandas dependency",
+                    content=new_content,
+                    sha=file.sha,
+                    branch=branch_name
+                )
+
+                print("Successfully updated requirements.txt")
+
+            except Exception as e:
+
+                print(f"Failed to update {file_path}: {e}")
+                return False
+
+        else:
+
+            print(
+                f"Automatic modification for {file_path} "
+                f"is not implemented yet."
+            )
+
+            return False
+
+    return True
+2. Call it after the branch is created
+
+Find:
+
+if branch_name:
+    print("\nReady for the next step:")
+    print("Apply the AI-generated fix to this branch.")
+
+Replace it with:
+
+if branch_name:
+
+    print("\nReady to apply the AI-generated fix.")
+
+    approval = input(
+        "\nApply the proposed fix to this branch? (yes/no): "
+    ).strip().lower()
+
+    if approval == "yes":
+
+        success = apply_fix(
+            repo,
+            branch_name,
+            analysis
+        )
+
+        if success:
+
+            print("\n")
+            print("=" * 70)
+            print("AI FIX APPLIED SUCCESSFULLY")
+            print("=" * 70)
+
+            print(f"Branch: {branch_name}")
+
+        else:
+
+            print("\nFix could not be applied.")
+
+    else:
+
+        print("\nFix application cancelled.")
+3. Run the agent
+python agent.py
+
+You'll go through:
+
+HUMAN APPROVAL REQUIRED
+
+Branch: ai-fix/33724849012
+
+Create this branch? (yes/no): yes
+
+Then:
+
+Ready to apply the AI-generated fix.
+
+Apply the proposed fix to this branch? (yes/no):
+
+Enter:
+
+yes
+
+You should see:
+
+======================================================================
+APPLYING AI-GENERATED FIX
+======================================================================
+
+File: requirements.txt
+Change: Add 'pandas' to requirements.txt
+
+Successfully updated requirements.txt
+
+======================================================================
+AI FIX APPLIED SUCCESSFULLY
+======================================================================
+
+Branch: ai-fix/33724849012
+4. Verify before we do anything else
+
+Go to GitHub and open:
+
+ai-fix/33724849012
+
+Open requirements.txt.
+
+You should see:
+
+pytest
+pandas
+
+The change should exist only on the AI branch.
+
+Your main branch should still be unchanged.
+
+⚠️ Important
+
+We're deliberately not creating the Pull Request yet.
+
+Our progression is:
+
+                 AI CI/CD Agent
+                       │
+                       ▼
+                 Detect Failure ✅
+                       │
+                       ▼
+                 Extract Log ✅
+                       │
+                       ▼
+                 AI Diagnosis ✅
+                       │
+                       ▼
+                 Generate Fix ✅
+                       │
+                       ▼
+                Human Approval ✅
+                       │
+                       ▼
+                Create Branch ✅
+                       │
+                       ▼
+              Apply Fix to Branch ← YOU ARE HERE
+                       │
+                       ▼
+                 Create PR
+                       │
+                       ▼
+                 CI Re-runs
+                       │
+                  ┌────┴────┐
+                  ▼         ▼
+                 PASS      FAIL
+
+Once you confirm requirements.txt contains pandas on the new branch, we'll implement Stage 5B.3 — automatically create the Pull Request.
