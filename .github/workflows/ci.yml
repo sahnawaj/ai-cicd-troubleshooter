@@ -26,6 +26,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pytest pandas
+          EXIT 1
 
       - name: Run application
         run: |
