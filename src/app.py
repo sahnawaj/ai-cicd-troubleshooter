@@ -20,7 +20,10 @@
 
 
 import pandas
+import requests
 
+def add(a, b):
+    return a + b
 
 def process_data():
     data = pandas.DataFrame({
