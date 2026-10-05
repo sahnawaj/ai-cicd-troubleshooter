@@ -22,6 +22,10 @@
 import pandas
 import requests
 
+import os
+
+API_URL = os.environ["API_URL"]
+
 def add(a, b):
     return a + b
 def calculate(
