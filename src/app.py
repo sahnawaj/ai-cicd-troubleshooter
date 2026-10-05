@@ -24,7 +24,7 @@ import requests
 
 def add(a, b):
     return a + b
-def calculate(
+def calculate():
     return 10
     
 def process_data():
