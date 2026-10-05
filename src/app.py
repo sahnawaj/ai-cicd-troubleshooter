@@ -24,7 +24,9 @@ import requests
 
 def add(a, b):
     return a + b
-
+def calculate(
+    return 10
+    
 def process_data():
     data = pandas.DataFrame({
         "name": ["Alice", "Bob"],
