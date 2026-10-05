@@ -24,7 +24,7 @@ import requests
 
 import os
 
-API_URL = os.environ["API_URL"]
+API_URL = os.environ.get("API_URL", "https://api.example.com")
 
 def add(a, b):
     return a + b
